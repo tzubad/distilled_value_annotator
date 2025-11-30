@@ -1,0 +1,8 @@
+# Core dependencies
+google-cloud-storage>=2.10.0
+google-cloud-aiplatform>=1.38.0
+pyyaml>=6.0
+pandas>=2.0.0
+
+# Additional utilities
+python-dateutil>=2.8.2

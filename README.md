@@ -1,0 +1,474 @@
+# Video Annotation Pipeline
+
+A Python-based pipeline for processing TikTok videos through a two-stage process: converting videos to movie scripts using Google's Gemini LLM, then extracting 19 human value annotations based on Schwartz's value framework.
+
+## Overview
+
+The pipeline processes videos stored in Google Cloud Storage (GCS) and outputs a CSV file containing value annotations for each video. It supports flexible execution modes, configurable retry logic, and optional intermediate script storage.
+
+### Key Features
+
+- **Two-stage processing**: Video → Movie Script → Value Annotations
+- **Flexible execution**: Run complete pipeline or individual stages
+- **Robust error handling**: Exponential backoff retry logic with configurable delays
+- **Cloud-native**: Built for Google Cloud Platform with GCS and Vertex AI
+- **Configurable**: YAML-based configuration for all pipeline parameters
+- **Optional script storage**: Save intermediate scripts or process in-memory
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Pipeline Stages](#pipeline-stages)
+- [Output Format](#output-format)
+- [Troubleshooting](#troubleshooting)
+- [Advanced Usage](#advanced-usage)
+
+## Prerequisites
+
+Before installing the pipeline, ensure you have:
+
+1. **Python 3.9 or higher**
+   ```bash
+   python --version
+   ```
+
+2. **Google Cloud Platform account** with:
+   - A GCS bucket containing your video files
+   - Vertex AI API enabled
+   - Appropriate IAM permissions
+
+3. **Google Cloud SDK** installed and configured
+   ```bash
+   gcloud --version
+   ```
+
+4. **Authentication** set up using one of:
+   - Application Default Credentials (ADC)
+   - Service Account Key
+
+### Setting Up Google Cloud Authentication
+
+**Option 1: Application Default Credentials (Recommended for local development)**
+```bash
+gcloud auth application-default login
+```
+
+**Option 2: Service Account Key**
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+```
+
+### Required GCP Permissions
+
+Your account or service account needs:
+- `storage.objects.get` - Read videos from GCS
+- `storage.objects.create` - Write scripts and CSV to GCS
+- `aiplatform.endpoints.predict` - Call Vertex AI models
+
+## Installation
+
+1. **Clone or download the repository**
+   ```bash
+   cd video-annotation-pipeline
+   ```
+
+2. **Create a virtual environment** (recommended)
+   ```bash
+   python -m venv venv
+   
+   # On Windows
+   venv\Scripts\activate
+   
+   # On macOS/Linux
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Verify installation**
+   ```bash
+   python main.py --help
+   ```
+
+## Configuration
+
+The pipeline uses a YAML configuration file to specify all parameters. A sample `config.yaml` is provided.
+
+### Configuration File Structure
+
+```yaml
+# Google Cloud Storage Configuration
+gcs:
+  bucket_name: "your-bucket-name"
+  video_source_path: "path/to/videos/"
+  script_output_path: "path/to/scripts/"  # Optional
+  csv_output_path: "path/to/output.csv"
+
+# LLM Model Configuration
+model:
+  name: "gemini-1.5-pro-002"
+  max_retries: 4
+  retry_delay: 40
+  request_delay: 3
+
+# Pipeline Execution Configuration
+pipeline:
+  stage: "both"  # Options: "both", "video_to_script", "script_to_annotation"
+  save_scripts: true
+
+# Safety Settings
+safety_settings:
+  harassment: "BLOCK_NONE"
+  hate_speech: "BLOCK_NONE"
+  sexually_explicit: "BLOCK_NONE"
+  dangerous_content: "BLOCK_NONE"
+```
+
+### Configuration Options
+
+#### GCS Settings
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `bucket_name` | string | Yes | Name of your GCS bucket |
+| `video_source_path` | string | Yes | Path prefix where videos are located (e.g., "videos/") |
+| `script_output_path` | string | No | Path prefix for saving scripts (only if `save_scripts: true`) |
+| `csv_output_path` | string | Yes | Full path including filename for CSV output |
+
+#### Model Settings
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `name` | string | Yes | Vertex AI model name (e.g., "gemini-1.5-pro-002") |
+| `max_retries` | integer | Yes | Maximum retry attempts for failed API calls (recommended: 3-5) |
+| `retry_delay` | integer | Yes | Base delay in seconds for exponential backoff (recommended: 30-60) |
+| `request_delay` | integer | Yes | Delay in seconds between consecutive requests (recommended: 2-5) |
+
+#### Pipeline Settings
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `stage` | string | Yes | Which stage(s) to run: "both", "video_to_script", or "script_to_annotation" |
+| `save_scripts` | boolean | Yes | Whether to save intermediate scripts to GCS |
+
+#### Safety Settings
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `harassment` | string | Yes | Filter level for harassment content |
+| `hate_speech` | string | Yes | Filter level for hate speech |
+| `sexually_explicit` | string | Yes | Filter level for sexually explicit content |
+| `dangerous_content` | string | Yes | Filter level for dangerous content |
+
+**Valid safety values**: `BLOCK_NONE`, `BLOCK_ONLY_HIGH`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_LOW_AND_ABOVE`
+
+## Usage
+
+### Basic Usage
+
+Run the complete pipeline with default configuration:
+
+```bash
+python main.py --config config.yaml
+```
+
+### Running Specific Stages
+
+**Video to Script Only**
+```yaml
+# In config.yaml
+pipeline:
+  stage: "video_to_script"
+  save_scripts: true
+```
+```bash
+python main.py --config config.yaml
+```
+
+**Script to Annotation Only**
+```yaml
+# In config.yaml
+pipeline:
+  stage: "script_to_annotation"
+```
+```bash
+python main.py --config config.yaml
+```
+
+### Example Workflow
+
+1. **First run**: Process videos and save scripts
+   ```yaml
+   pipeline:
+     stage: "both"
+     save_scripts: true
+   ```
+
+2. **Reprocess annotations**: Use existing scripts
+   ```yaml
+   pipeline:
+     stage: "script_to_annotation"
+   ```
+
+## Pipeline Stages
+
+### Stage 1: Video to Movie Script
+
+Converts video files to structured movie scripts including:
+- Audio transcription
+- Visual descriptions
+- On-screen text/captions
+- Scene descriptions
+
+**Input**: MP4 video files in GCS
+**Output**: Text scripts (saved to GCS or kept in memory)
+
+### Stage 2: Script to Value Annotations
+
+Extracts 19 human value annotations from movie scripts based on Schwartz's value framework.
+
+**Input**: Movie scripts (from GCS or memory)
+**Output**: JSON annotations with values and metadata
+
+### Stage 3: CSV Generation
+
+Aggregates all annotations into a single CSV file.
+
+**Input**: Annotation dictionaries
+**Output**: CSV file in GCS
+
+## Output Format
+
+The pipeline generates a CSV file with the following columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `video_id` | string | Video filename identifier |
+| `Self_Direction_Thought` | integer | Value score (-1, 0, 1, 2) |
+| `Self_Direction_Action` | integer | Value score (-1, 0, 1, 2) |
+| `Stimulation` | integer | Value score (-1, 0, 1, 2) |
+| `Hedonism` | integer | Value score (-1, 0, 1, 2) |
+| `Achievement` | integer | Value score (-1, 0, 1, 2) |
+| `Power_Resources` | integer | Value score (-1, 0, 1, 2) |
+| `Power_Dominance` | integer | Value score (-1, 0, 1, 2) |
+| `Face` | integer | Value score (-1, 0, 1, 2) |
+| `Security_Personal` | integer | Value score (-1, 0, 1, 2) |
+| `Security_Social` | integer | Value score (-1, 0, 1, 2) |
+| `Conformity_Rules` | integer | Value score (-1, 0, 1, 2) |
+| `Conformity_Interpersonal` | integer | Value score (-1, 0, 1, 2) |
+| `Tradition` | integer | Value score (-1, 0, 1, 2) |
+| `Humility` | integer | Value score (-1, 0, 1, 2) |
+| `Benevolence_Dependability` | integer | Value score (-1, 0, 1, 2) |
+| `Benevolence_Care` | integer | Value score (-1, 0, 1, 2) |
+| `Universalism_Concern` | integer | Value score (-1, 0, 1, 2) |
+| `Universalism_Nature` | integer | Value score (-1, 0, 1, 2) |
+| `Universalism_Tolerance` | integer | Value score (-1, 0, 1, 2) |
+| `Has_sound` | boolean | Whether video has audio |
+| `notes` | string | Optional text notes from annotation |
+
+### Value Score Interpretation
+
+- `-1`: Value is contradicted or opposed
+- `0`: Value is not present or neutral
+- `1`: Value is present or supported
+- `2`: Value is strongly emphasized
+
+## Troubleshooting
+
+### Common Issues
+
+#### 1. Authentication Errors
+
+**Error**: `google.auth.exceptions.DefaultCredentialsError`
+
+**Solution**:
+```bash
+# Set up application default credentials
+gcloud auth application-default login
+
+# Or set service account key
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
+```
+
+#### 2. Permission Denied Errors
+
+**Error**: `403 Forbidden` or `Permission denied`
+
+**Solution**:
+- Verify your account has the required IAM roles
+- Check bucket permissions: `gsutil iam get gs://your-bucket-name`
+- Ensure Vertex AI API is enabled: `gcloud services enable aiplatform.googleapis.com`
+
+#### 3. Rate Limiting / Quota Errors
+
+**Error**: `429 Too Many Requests` or `ResourceExhausted`
+
+**Solution**:
+- Increase `request_delay` in config (e.g., from 3 to 5 seconds)
+- Increase `retry_delay` for longer backoff (e.g., from 40 to 60 seconds)
+- Reduce batch size by processing videos in smaller groups
+
+#### 4. Configuration Validation Errors
+
+**Error**: `Configuration validation error`
+
+**Solution**:
+- Check YAML syntax is valid
+- Ensure all required fields are present
+- Verify field types match expected values
+- Check that paths don't have trailing spaces
+
+#### 5. Video Processing Failures
+
+**Error**: Individual videos fail to process
+
+**Solution**:
+- Check video format (must be MP4)
+- Verify video file is not corrupted
+- Check video size (very large files may timeout)
+- Review safety settings - content may be blocked
+- Check pipeline logs for specific error messages
+
+#### 6. Model Not Found
+
+**Error**: `Model not found` or `Invalid model name`
+
+**Solution**:
+- Verify model name is correct (e.g., "gemini-1.5-pro-002")
+- Check model is available in your GCP region
+- Ensure Vertex AI API is enabled
+
+#### 7. Out of Memory Errors
+
+**Error**: `MemoryError` or system slowdown
+
+**Solution**:
+- Set `save_scripts: false` to reduce memory usage
+- Process videos in smaller batches
+- Increase system memory or use a machine with more RAM
+
+### Debugging Tips
+
+1. **Enable verbose logging**:
+   ```python
+   # In main.py, change logging level
+   logging.basicConfig(level=logging.DEBUG)
+   ```
+
+2. **Test with a small dataset**:
+   - Start with 2-3 videos to verify configuration
+   - Check output format before processing full dataset
+
+3. **Run stages independently**:
+   - Test video-to-script stage first
+   - Verify scripts look correct
+   - Then run script-to-annotation stage
+
+4. **Check GCS paths**:
+   ```bash
+   # List videos in your bucket
+   gsutil ls gs://your-bucket-name/path/to/videos/
+   
+   # Verify bucket access
+   gsutil ls gs://your-bucket-name/
+   ```
+
+5. **Monitor API quotas**:
+   - Check Vertex AI quotas in GCP Console
+   - Monitor API usage in Cloud Monitoring
+
+### Getting Help
+
+If you encounter issues not covered here:
+
+1. Check the execution summary for specific error messages
+2. Review the logs for detailed error traces
+3. Verify your GCP project configuration
+4. Ensure all dependencies are up to date: `pip install --upgrade -r requirements.txt`
+
+## Advanced Usage
+
+### Processing Large Datasets
+
+For large video collections:
+
+1. **Adjust delays to avoid rate limits**:
+   ```yaml
+   model:
+     request_delay: 5  # Increase delay between requests
+     retry_delay: 60   # Increase backoff delay
+   ```
+
+2. **Process in batches**:
+   - Split videos into subdirectories
+   - Process each batch separately
+   - Combine CSV outputs afterward
+
+3. **Use faster model for testing**:
+   ```yaml
+   model:
+     name: "gemini-1.5-flash-002"  # Faster, lower cost
+   ```
+
+### Custom System Instructions
+
+The pipeline uses instruction files in the `prompts/` directory:
+- `prompts/video_to_script_instructions.txt` - Video to script conversion
+- `prompts/script_to_annotation_instructions.txt` - Script to annotation extraction
+
+You can modify these files to customize the LLM behavior.
+
+### Monitoring Progress
+
+The pipeline provides real-time progress updates:
+```
+Processing video 1/10: video_001.mp4
+Processing video 2/10: video_002.mp4
+...
+```
+
+Failed items are logged and summarized at the end.
+
+### Cost Optimization
+
+To reduce costs:
+
+1. **Use Flash model**: `gemini-1.5-flash-002` (faster, cheaper)
+2. **Don't save scripts**: Set `save_scripts: false`
+3. **Process in-memory**: Run complete pipeline without intermediate storage
+4. **Batch processing**: Process multiple videos in one session to amortize startup costs
+
+## Project Structure
+
+```
+video-annotation-pipeline/
+├── config/              # Configuration module
+├── gcs/                 # GCS interface module
+├── llm/                 # LLM client modules
+├── orchestrator/        # Pipeline orchestrator
+├── processors/          # Video and script processors
+├── prompts/             # System instruction files
+├── utils/               # Utility modules (logging)
+├── config.yaml          # Configuration file
+├── main.py              # Main entry point
+├── requirements.txt     # Python dependencies
+└── README.md            # This file
+```
+
+## License
+
+[Add your license information here]
+
+## Contributing
+
+[Add contribution guidelines here]
+
+## Support
+
+For questions or issues, please [add contact information or issue tracker link].

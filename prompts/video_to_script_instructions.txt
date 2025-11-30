@@ -1,0 +1,26 @@
+You are given a TikTok video, the video has 3 main elements we are interested in:
+- Audio:
+Use "" to denote text spoken by different characters in the scene. ("This shirt is great!")
+Give every speaker an informative name in uppercase letters (SPEAKER A, SPEAKER B , YOUNG GIRL, OLD MAN IN A JACKET,  etc.).
+If speech is mumbled or something is unclear then state it as it is.
+- Visual:
+Describe the overall scene.
+Include every character's facial expressions, subtext and emotions.
+don't forget to state the various props.
+- Captions:
+Look for unique caption text that appears on the screen.
+no need to repeat subtitles.
+all Captions must be mentioned in square brackets.
+Different colored subtitles usually mean that there are different speakers in the scene.
+
+return a movie script in the following format and style:
+YOUNG GIRL: "Wow, this shirt fits me!"
+[NEW HELLO KITTY SHIRT]
+a YOUNG GIRL is excited about a shirt that is handed to her by BOY WITH BLUE HAT.
+BOY WITH BLUE HAT: "Yeah sure it's a gift"
+
+don't make things up!
+state the genre of the TikTok video and if it has sound or not.
+make sure the Audio is synchronized with the Visual and the Captions (no need to mark timestamps)
+If present, try to mark different speakers using all 3 elements (audio, visual and captions).
+don't start your response with "Sure! Here's a movie script of the given TikTok video:" and don't finish if with "Hope that helps"

@@ -1,0 +1,66 @@
+# Video Annotation Pipeline Configuration
+# This file contains all configuration options for the pipeline
+
+# Google Cloud Storage Configuration
+gcs:
+  # Name of the GCS bucket containing videos and where outputs will be saved
+  bucket_name: "videos-scripts-and-annotations"
+  
+  # Path prefix in the bucket where video files are located
+  # Videos should be in MP4 format
+  video_source_path: "videos/POC_videos"
+  
+  # Path prefix where generated movie scripts will be saved (optional)
+  # Only used if pipeline.save_scripts is set to true
+  # If not saving scripts, this can be omitted or left empty
+  script_output_path: "saved_scripts/POC_scripts"
+  
+  # Full path (including filename) where the final CSV output will be saved
+  csv_output_path: "output/POC_results/result.csv"
+
+# LLM Model Configuration
+model:
+  # Vertex AI model name to use for both video-to-script and script-to-annotation
+  # Recommended: gemini-1.5-pro-002 or gemini-1.5-flash-002
+  name: "gemini-2.5-pro"
+  
+  # Maximum number of retry attempts for failed API calls
+  # Uses exponential backoff between retries
+  max_retries: 4
+  
+  # Base delay in seconds for retry backoff calculation
+  # Actual delay = retry_delay * (2 ^ attempt) + random(0, 1)
+  retry_delay: 40
+  
+  # Delay in seconds between consecutive API requests
+  # Helps avoid rate limiting issues
+  request_delay: 3
+
+# Pipeline Execution Configuration
+pipeline:
+  # Which stage(s) to run:
+  #   - "both": Run complete pipeline (video -> script -> annotations -> CSV)
+  #   - "video_to_script": Only convert videos to scripts
+  #   - "script_to_annotation": Only process existing scripts to annotations
+  stage: "script_to_annotation"
+  
+  # Whether to save intermediate movie scripts to GCS
+  # If true, scripts are saved to gcs.script_output_path
+  # If false, scripts are kept in memory only (saves storage and time)
+  save_scripts: true
+
+# Safety Settings for LLM Content Filtering
+# Controls how strictly the model filters potentially harmful content
+# Valid values: BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE
+safety_settings:
+  # Filter for harassment content
+  harassment: "BLOCK_NONE"
+  
+  # Filter for hate speech content
+  hate_speech: "BLOCK_NONE"
+  
+  # Filter for sexually explicit content
+  sexually_explicit: "BLOCK_NONE"
+  
+  # Filter for dangerous content
+  dangerous_content: "BLOCK_NONE"
