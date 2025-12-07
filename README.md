@@ -449,17 +449,223 @@ To reduce costs:
 ```
 video-annotation-pipeline/
 ├── config/              # Configuration module
+├── evaluation/          # Model Evaluation Module
+│   ├── adapters/        # Model adapters (base, gemini, MLM, script)
+│   ├── metrics/         # Metrics calculation
+│   └── reports/         # Report generation
+├── examples/            # Example configs and sample data
 ├── gcs/                 # GCS interface module
 ├── llm/                 # LLM client modules
 ├── orchestrator/        # Pipeline orchestrator
 ├── processors/          # Video and script processors
 ├── prompts/             # System instruction files
+├── tests/               # Test suite
 ├── utils/               # Utility modules (logging)
 ├── config.yaml          # Configuration file
 ├── main.py              # Main entry point
+├── run_evaluation.py    # Model evaluation CLI
 ├── requirements.txt     # Python dependencies
 └── README.md            # This file
 ```
+
+---
+
+## Model Evaluation Module
+
+The Model Evaluation Module provides a framework for evaluating and comparing different model predictions against ground truth annotations. It calculates comprehensive metrics and generates detailed reports.
+
+### Features
+
+- **Multiple Adapter Support**: Evaluate different models through a unified interface
+- **Comprehensive Metrics**: F1 scores (macro, weighted), precision, recall for each category
+- **Endorsed/Conflict Analysis**: Separate metrics for endorsed values (1,2) and conflict values (-1)
+- **Flexible Configuration**: YAML/JSON configuration files
+- **Report Generation**: CSV and JSON reports with model comparisons
+- **Sampling Support**: Evaluate on subsets with reproducible random sampling
+
+### Quick Start
+
+1. **Create a configuration file** (`evaluation_config.yaml`):
+
+   ```yaml
+   ground_truth_path: "path/to/ground_truth.csv"
+   scripts_path: "path/to/scripts/"
+   output_dir: "evaluation_output/"
+   
+   models:
+     - model_type: gemini
+       model_name: gemini-1.5-pro
+       adapter_class: GeminiAdapter
+       config:
+         model_id: "gemini-1.5-pro-002"
+         project_id: "your-project-id"
+         location: "us-central1"
+   ```
+
+2. **Run the evaluation**:
+
+   ```bash
+   python run_evaluation.py --config evaluation_config.yaml
+   ```
+
+3. **View results** in the `evaluation_output/` directory.
+
+### CLI Options
+
+```bash
+python run_evaluation.py --config CONFIG_FILE [OPTIONS]
+
+Options:
+  --config, -c PATH     Path to configuration file (required)
+  --verbose, -v         Enable verbose output (DEBUG level)
+  --quiet, -q           Suppress non-essential output (WARNING level)
+  --dry-run             Validate configuration without running
+  --output-dir PATH     Override output directory
+  --skip-reports        Skip report generation
+  --models MODEL        Filter to specific models (can repeat)
+```
+
+### Examples
+
+**Dry run to validate configuration:**
+```bash
+python run_evaluation.py --config config.yaml --dry-run
+```
+
+**Verbose output for debugging:**
+```bash
+python run_evaluation.py --config config.yaml --verbose
+```
+
+**Evaluate only specific models:**
+```bash
+python run_evaluation.py --config config.yaml --models model_a --models model_b
+```
+
+### Configuration Reference
+
+See `examples/evaluation_config.yaml` for a fully documented example.
+
+#### Required Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ground_truth_path` | string | Path to CSV file with ground truth annotations |
+| `scripts_path` | string | Directory containing script files |
+| `output_dir` | string | Directory for output reports |
+| `models` | list | List of model configurations |
+
+#### Optional Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `sample_size` | integer | null | Number of videos to sample (null = all) |
+| `random_seed` | integer | null | Seed for reproducible sampling |
+| `min_frequency_threshold` | float | 0.01 | Min category frequency for aggregate metrics |
+| `parallel_execution` | boolean | true | Enable parallel prediction |
+| `max_workers` | integer | 4 | Maximum parallel workers |
+
+#### Model Configuration
+
+Each model in the `models` list requires:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `model_type` | string | Type identifier (e.g., "gemini", "custom") |
+| `model_name` | string | Unique name for this model |
+| `adapter_class` | string | Adapter class name to use |
+| `config` | object | Model-specific configuration |
+
+### Ground Truth Format
+
+The ground truth CSV should have columns:
+- `video_id`: Unique video identifier
+- `video_uri`: Video file path/URI
+- `script_uri`: Script file path
+- Category columns (19 value categories): `Achievement`, `Benevolence`, `Conformity`, etc.
+
+Values should be:
+- `-1`: Value is contradicted
+- `0`: Value not present
+- `1`: Value is present
+- `2`: Value is strongly emphasized
+
+See `examples/sample_ground_truth.csv` for a sample file.
+
+### Metrics Explained
+
+The evaluation calculates these metrics for each category:
+
+| Metric | Description |
+|--------|-------------|
+| `precision` | True positives / (True positives + False positives) |
+| `recall` | True positives / (True positives + False negatives) |
+| `f1_score` | Harmonic mean of precision and recall |
+| `support` | Number of ground truth instances |
+
+Aggregate metrics are provided for:
+- **Endorsed values**: Categories with values 1 or 2 (collapsed to binary)
+- **Conflict values**: Categories with value -1
+- **Combined**: All predictions together
+
+### Output Reports
+
+After evaluation, the following files are generated:
+
+1. **`{model_name}_category_metrics.csv`**: Per-category metrics
+2. **`{model_name}_aggregate_metrics.csv`**: Summary metrics
+3. **`{model_name}_report.json`**: Complete JSON report
+4. **`model_comparison.csv`**: Side-by-side model comparison (if multiple models)
+
+### Creating Custom Adapters
+
+To evaluate a custom model, create an adapter class:
+
+```python
+from evaluation.adapters import ModelAdapter
+from evaluation.models import VideoAnnotation, PredictionResult
+
+class MyModelAdapter(ModelAdapter):
+    def __init__(self, model_name: str, **config):
+        super().__init__(model_name=model_name, **config)
+        # Initialize your model
+    
+    def initialize(self) -> bool:
+        # Return True if initialization succeeds
+        return True
+    
+    def predict(self, video: VideoAnnotation) -> PredictionResult:
+        # Run prediction and return result
+        predictions = {"Achievement": 1, "Benevolence": 0, ...}
+        return PredictionResult(
+            video_id=video.video_id,
+            predictions=predictions,
+            success=True
+        )
+    
+    def get_model_type(self) -> str:
+        return "my_model"
+    
+    def get_model_name(self) -> str:
+        return self._model_name
+```
+
+Register and use your adapter:
+
+```python
+from evaluation import EvaluationOrchestrator
+
+EvaluationOrchestrator.register_adapter("MyModelAdapter", MyModelAdapter)
+```
+
+### Sample Data
+
+The `examples/` directory contains:
+- `evaluation_config.yaml`: Documented configuration template
+- `sample_ground_truth.csv`: Sample dataset with 10 videos
+- `sample_scripts/`: Sample script files
+
+---
 
 ## License
 

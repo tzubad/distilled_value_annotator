@@ -1,0 +1,68 @@
+# Model Evaluation Configuration Example
+# ========================================
+#
+# This is an example configuration file for the Model Evaluation Module.
+# Copy this file and modify it for your specific evaluation needs.
+
+# Required: Path to the ground truth CSV file
+# The CSV should contain: video_id, and 19 value category columns
+ground_truth_path: "./data/ground_truth.csv"
+
+# Required: Path to the directory containing video scripts
+# Scripts should be named with video_id (e.g., video_001.txt)
+scripts_path: "./data/scripts/"
+
+# Required: Output directory for evaluation reports
+# Reports will be generated as CSV and JSON files
+output_dir: "./evaluation_results/"
+
+# Optional: Sample size for evaluation
+# If specified, a random sample of this size will be used
+# Useful for quick testing or when full evaluation is too slow
+# sample_size: 100
+
+# Optional: Random seed for reproducible sampling
+# Set this to get consistent samples across runs
+random_seed: 42
+
+# Optional: Minimum frequency threshold for category inclusion
+# Categories appearing less frequently than this threshold
+# will be excluded from aggregate metrics
+min_frequency_threshold: 0.05
+
+# Optional: Enable parallel execution (experimental)
+# parallel_execution: true
+# max_workers: 4
+
+# Required: List of models to evaluate
+models:
+  # Example: Gemini LLM adapter
+  - model_type: llm
+    model_name: gemini-flash
+    adapter_class: GeminiAdapter
+    config:
+      model_id: "gemini-1.5-flash"
+      max_retries: 3
+      retry_delay: 1.0
+      temperature: 0.1
+      # Optional: Custom system prompt path
+      # system_prompt_path: "./prompts/custom_prompt.txt"
+
+  # Example: Another Gemini model for comparison
+  - model_type: llm
+    model_name: gemini-pro
+    adapter_class: GeminiAdapter
+    config:
+      model_id: "gemini-1.5-pro"
+      max_retries: 3
+      retry_delay: 2.0
+      temperature: 0.0
+
+  # Example: Masked Language Model (RoBERTa)
+  # - model_type: mlm
+  #   model_name: roberta-values
+  #   adapter_class: MLMAdapter
+  #   config:
+  #     model_id: "roberta-large"
+  #     device: "cuda"  # or "cpu"
+  #     batch_size: 8

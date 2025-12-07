@@ -4,3 +4,10 @@
 /turn_moviescript_to_csv.ipynb
 /upload_test_videos.py
 /venv-video-pipeline
+/.hypothesis/
+/evaluation/__pycache__
+/tests/__pycache__
+/evaluation/adapters/__pycache__
+/.specify
+/.vscode
+/.github

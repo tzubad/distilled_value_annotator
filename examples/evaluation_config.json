@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Model Evaluation Configuration",
+  "description": "Configuration file for the Model Evaluation Module",
+  
+  "ground_truth_path": "./data/ground_truth.csv",
+  "scripts_path": "./data/scripts/",
+  "output_dir": "./evaluation_results/",
+  
+  "sample_size": null,
+  "random_seed": 42,
+  "min_frequency_threshold": 0.05,
+  
+  "parallel_execution": false,
+  "max_workers": 4,
+  
+  "models": [
+    {
+      "model_type": "llm",
+      "model_name": "gemini-flash",
+      "adapter_class": "GeminiAdapter",
+      "config": {
+        "model_id": "gemini-1.5-flash",
+        "max_retries": 3,
+        "retry_delay": 1.0,
+        "temperature": 0.1
+      }
+    }
+  ]
+}

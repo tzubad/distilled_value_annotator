@@ -17,19 +17,19 @@ class TestPipelineIntegration:
     
     @pytest.fixture
     def test_config(self):
-        """Create a test configuration file."""
+        """Create a test configuration file using real GCS bucket."""
         config_data = {
             'gcs': {
-                'bucket_name': 'test-bucket',
-                'video_source_path': 'test/videos/',
-                'script_output_path': 'test/scripts/',
-                'csv_output_path': 'test/output/results.csv'
+                'bucket_name': 'videos-scripts-and-annotations',
+                'video_source_path': 'videos/POC_videos',
+                'script_output_path': 'saved_scripts/POC_scripts',
+                'csv_output_path': 'output/POC_results/test_result.csv'
             },
             'model': {
-                'name': 'gemini-1.5-pro-002',
-                'max_retries': 2,
-                'retry_delay': 5,
-                'request_delay': 1
+                'name': 'gemini-2.5-pro',
+                'max_retries': 4,
+                'retry_delay': 40,
+                'request_delay': 3
             },
             'pipeline': {
                 'stage': 'both',
@@ -52,14 +52,13 @@ class TestPipelineIntegration:
         # Cleanup
         Path(config_path).unlink()
     
-    @pytest.mark.skip(reason="Requires GCS bucket with test videos")
     def test_complete_pipeline_with_sample_videos(self, test_config):
         """
         Test the complete pipeline with sample videos.
         
         Prerequisites:
-        - GCS bucket 'test-bucket' must exist
-        - 3 test videos must be uploaded to 'test/videos/' path
+        - GCS bucket 'videos-scripts-and-annotations' must be accessible
+        - Videos must exist in 'videos/POC_videos/' path
         - GCP credentials must be configured
         - Vertex AI API must be enabled
         """
@@ -82,16 +81,15 @@ class TestPipelineIntegration:
         
         # Verify CSV path format
         assert summary['csv_path'].startswith('gs://')
-        assert 'results.csv' in summary['csv_path']
+        assert 'results.csv' in summary['csv_path'] or 'test_result.csv' in summary['csv_path']
     
-    @pytest.mark.skip(reason="Requires GCS bucket with test videos")
     def test_video_to_script_stage_only(self, test_config):
         """
         Test only the video-to-script stage.
         
         Prerequisites:
-        - GCS bucket 'test-bucket' must exist
-        - 3 test videos must be uploaded to 'test/videos/' path
+        - GCS bucket 'videos-scripts-and-annotations' must be accessible
+        - Videos must exist in 'videos/POC_videos/' path
         - GCP credentials must be configured
         - Vertex AI API must be enabled
         """
@@ -119,14 +117,13 @@ class TestPipelineIntegration:
         assert summary['successful_videos'] > 0
         assert summary['scripts_saved'] is True
     
-    @pytest.mark.skip(reason="Requires GCS bucket with test scripts")
     def test_script_to_annotation_stage_only(self, test_config):
         """
         Test only the script-to-annotation stage.
         
         Prerequisites:
-        - GCS bucket 'test-bucket' must exist
-        - Test scripts must be uploaded to 'test/scripts/' path
+        - GCS bucket 'videos-scripts-and-annotations' must be accessible
+        - Test scripts must be present in 'TikTok_Videos/Scripts/' path
         - GCP credentials must be configured
         - Vertex AI API must be enabled
         """
@@ -242,7 +239,6 @@ class TestPipelineIntegration:
 
 
 @pytest.mark.integration
-@pytest.mark.skip(reason="Manual test - requires local video files and GCS setup")
 def test_upload_local_videos_to_gcs():
     """
     Helper test to upload local test videos to GCS.
@@ -256,10 +252,10 @@ def test_upload_local_videos_to_gcs():
     from google.cloud import storage
     import os
     
-    # Configuration
-    bucket_name = 'your-bucket-name'  # Update this
+    # Configuration - using your actual bucket
+    bucket_name = 'videos-scripts-and-annotations'
     local_video_dir = '.'  # Current directory
-    gcs_prefix = 'test/videos/'
+    gcs_prefix = 'TikTok_Videos/Videos/'
     
     # Video files to upload
     video_files = [
