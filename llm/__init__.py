@@ -2,6 +2,7 @@
 
 import time
 import random
+import os
 import vertexai
 from typing import Callable, Any, Dict, Optional
 from vertexai.generative_models import (
@@ -12,7 +13,19 @@ from vertexai.generative_models import (
 
 # Initialize Vertex AI (uses Application Default Credentials)
 # This will automatically detect project and location from environment
-vertexai.init()
+# Strip whitespace from project ID if it exists in environment
+try:
+    project_id = None
+    if 'GOOGLE_CLOUD_PROJECT' in os.environ:
+        project_id = os.environ['GOOGLE_CLOUD_PROJECT'].strip()
+    
+    if project_id:
+        vertexai.init(project=project_id, location='us-central1')
+    else:
+        vertexai.init()
+except Exception as e:
+    # If initialization fails, try with just the base init
+    vertexai.init()
 
 
 class BaseLLMClient:

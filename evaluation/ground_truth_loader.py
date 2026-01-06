@@ -89,13 +89,15 @@ class GroundTruthLoader:
         "{'absent': 0}": 0,
         "{'conflict': -1}": -1,
         "{'dominant': 2}": 2,
+        "{'present': 2}": 1
     }
     
     def __init__(
         self,
         dataset_path: str,
         sample_size: Optional[int] = None,
-        random_seed: Optional[int] = None
+        random_seed: Optional[int] = None,
+        scripts_path: Optional[str] = None
     ):
         """
         Initialize the ground truth loader.
@@ -104,10 +106,12 @@ class GroundTruthLoader:
             dataset_path: Path to the ground truth dataset file (CSV or JSON)
             sample_size: Optional number of videos to sample (None = use all)
             random_seed: Random seed for reproducible sampling
+            scripts_path: Base path for script files (e.g., 'gs://bucket/path/to/scripts/')
         """
         self.dataset_path = dataset_path
         self.sample_size = sample_size
         self.random_seed = random_seed
+        self.scripts_path = scripts_path
         
         if random_seed is not None:
             random.seed(random_seed)
@@ -273,8 +277,15 @@ class GroundTruthLoader:
                         if not video_id:
                             video_id = f"video_{row_num}"
                         
-                        # Script URI - construct from video URI
-                        script_uri = video_uri.replace('.mp4', '.txt').replace('/video/', '/scripts/')
+                        # Script URI - construct from scripts_path and video_id
+                        if self.scripts_path:
+                            # Use configured scripts path with proper video file naming
+                            # Format: @username_video_videoid.mp4
+                            script_filename = f"@{video_id.replace('_', '_video_', 1)}.mp4"
+                            script_uri = self.scripts_path.rstrip('/') + '/' + script_filename
+                        else:
+                            # Fallback to old behavior
+                            script_uri = video_uri.replace('.mp4', '.txt').replace('/video/', '/scripts/')
                         
                         # Assume has sound for TikTok videos
                         has_sound = True

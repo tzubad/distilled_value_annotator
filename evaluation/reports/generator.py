@@ -4,6 +4,7 @@ import csv
 import json
 import logging
 import os
+import tempfile
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ class ReportGenerator:
     - CSV reports for per-category and aggregate metrics
     - JSON reports with full structured data
     - Comparison reports for multiple models
+    - GCS upload support for cloud storage
     """
     
     def __init__(self, output_dir: str):
@@ -33,17 +35,78 @@ class ReportGenerator:
         
         Args:
             output_dir: Directory path where reports will be saved.
+                       Can be a local path or GCS URI (gs://bucket/path).
                        Directory will be created if it doesn't exist.
         """
-        self._output_dir = Path(output_dir)
-        self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._output_dir_str = output_dir
+        self._is_gcs = output_dir.startswith("gs://")
         
-        logging.info(f"ReportGenerator initialized with output directory: {self._output_dir}")
+        if self._is_gcs:
+            # For GCS, use a temporary local directory
+            self._output_dir = Path(tempfile.mkdtemp(prefix="evaluation_reports_"))
+            self._gcs_uri = output_dir
+            logging.info(f"ReportGenerator initialized with GCS output: {self._gcs_uri}")
+            logging.info(f"Using temporary local directory: {self._output_dir}")
+        else:
+            self._output_dir = Path(output_dir)
+            self._output_dir.mkdir(parents=True, exist_ok=True)
+            self._gcs_uri = None
+            logging.info(f"ReportGenerator initialized with output directory: {self._output_dir}")
     
     @property
     def output_dir(self) -> Path:
         """Get the output directory path."""
         return self._output_dir
+    
+    def _upload_to_gcs(self, local_path: Path) -> str:
+        """
+        Upload a file to GCS if GCS output is configured.
+        
+        Args:
+            local_path: Path to the local file to upload
+            
+        Returns:
+            GCS URI of the uploaded file, or local path string if not using GCS
+        """
+        if not self._is_gcs:
+            return str(local_path)
+        
+        try:
+            from google.cloud import storage
+            import os
+            
+            # Parse GCS URI
+            gcs_path = self._gcs_uri.replace("gs://", "")
+            bucket_name = gcs_path.split("/")[0]
+            base_path = "/".join(gcs_path.split("/")[1:]) if "/" in gcs_path else ""
+            
+            # Initialize GCS client
+            project_id = os.environ.get('GOOGLE_CLOUD_PROJECT')
+            if project_id:
+                client = storage.Client(project=project_id)
+            else:
+                client = storage.Client()
+            
+            bucket = client.bucket(bucket_name)
+            
+            # Construct destination path
+            file_name = local_path.name
+            if base_path:
+                gcs_file_path = f"{base_path.rstrip('/')}/{file_name}"
+            else:
+                gcs_file_path = file_name
+            
+            # Upload file
+            blob = bucket.blob(gcs_file_path)
+            blob.upload_from_filename(str(local_path))
+            
+            gcs_uri = f"gs://{bucket_name}/{gcs_file_path}"
+            logging.info(f"Uploaded {local_path.name} to {gcs_uri}")
+            return gcs_uri
+            
+        except Exception as e:
+            logging.error(f"Failed to upload {local_path} to GCS: {e}")
+            return str(local_path)
     
     def generate_all_reports(
         self,
@@ -98,7 +161,7 @@ class ReportGenerator:
             timestamp: Optional timestamp for filename
             
         Returns:
-            Path to the per-category metrics CSV file
+            Path to the per-category metrics CSV file (or GCS URI if using GCS)
         """
         if timestamp is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -113,8 +176,12 @@ class ReportGenerator:
         aggregate_csv_path = self._output_dir / f"{model_name_safe}_aggregate_metrics_{timestamp}.csv"
         self._write_aggregate_csv(result, aggregate_csv_path)
         
+        # Upload to GCS if configured
+        category_uri = self._upload_to_gcs(category_csv_path)
+        aggregate_uri = self._upload_to_gcs(aggregate_csv_path)
+        
         logging.info(f"Generated CSV reports for {result.model_name}")
-        return category_csv_path
+        return category_uri if self._is_gcs else category_csv_path
     
     def _write_category_csv(self, result: ModelEvaluationResult, path: Path) -> None:
         """Write per-category metrics to CSV."""
@@ -217,7 +284,7 @@ class ReportGenerator:
             timestamp: Optional timestamp for filename
             
         Returns:
-            Path to the JSON report file
+            Path to the JSON report file (or GCS URI if using GCS)
         """
         if timestamp is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -237,8 +304,11 @@ class ReportGenerator:
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(report_data, f, indent=2)
         
-        logging.info(f"Generated JSON report for {result.model_name}: {json_path}")
-        return json_path
+        # Upload to GCS if configured
+        json_uri = self._upload_to_gcs(json_path)
+        
+        logging.info(f"Generated JSON report for {result.model_name}: {json_uri if self._is_gcs else json_path}")
+        return json_uri if self._is_gcs else json_path
     
     def _result_to_dict(self, result: ModelEvaluationResult) -> Dict:
         """Convert ModelEvaluationResult to a JSON-serializable dictionary."""
@@ -412,8 +482,11 @@ class ReportGenerator:
             for rank, (idx, r) in enumerate(ranked, 1):
                 writer.writerow([rank, r.model_name, r.endorsed_aggregate.weighted_f1])
         
-        logging.info(f"Generated comparison report: {comparison_path}")
-        return comparison_path
+        # Upload to GCS if configured
+        comparison_uri = self._upload_to_gcs(comparison_path)
+        
+        logging.info(f"Generated comparison report for {len(results)} models")
+        return comparison_uri if self._is_gcs else comparison_path
     
     def _sanitize_filename(self, name: str) -> str:
         """Sanitize a string for use in a filename."""

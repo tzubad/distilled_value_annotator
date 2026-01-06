@@ -158,6 +158,7 @@ class EvaluationOrchestrator:
             dataset_path=self._config.ground_truth_path,
             sample_size=self._config.sample_size,
             random_seed=self._config.random_seed,
+            scripts_path=self._config.scripts_path,
         )
         self._ground_truth = loader.load()
         

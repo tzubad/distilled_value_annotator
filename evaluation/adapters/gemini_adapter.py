@@ -109,9 +109,17 @@ class GeminiAdapter(ModelAdapter):
             try:
                 import vertexai
                 from vertexai.generative_models import GenerativeModel, SafetySetting, HarmCategory, HarmBlockThreshold
+                import os
                 
-                # Initialize Vertex AI (uses default project and location from environment)
-                vertexai.init()
+                # Get project ID from environment
+                project_id = os.environ.get('GOOGLE_CLOUD_PROJECT')
+                if not project_id:
+                    self.logger.error("GOOGLE_CLOUD_PROJECT environment variable not set")
+                    return False
+                
+                # Initialize Vertex AI with explicit project
+                vertexai.init(project=project_id, location="us-central1")
+                self.logger.info(f"Initialized Vertex AI with project: {project_id}")
                 
                 # Configure safety settings
                 safety_settings = self._configure_safety_settings()
@@ -366,6 +374,91 @@ class GeminiAdapter(ModelAdapter):
         )
         return None
     
+    def _parse_llm_value(self, llm_value) -> Optional[int]:
+        """
+        Parse a value from the LLM response into numeric annotation value.
+        
+        Handles various formats the LLM might return:
+        - Standard strings: "present", "conflict", "dominant", "endorsed", "None", None
+        - Integers: 0, 1, 2, -1
+        - Dictionary-like strings: "{'present': 1}", "{'conflict': -1}"
+        - Dictionaries: {'present': 1}
+        
+        Args:
+            llm_value: Value from LLM response
+        
+        Returns:
+            Numeric value (-1, 0, 1, 2) or None if unable to parse
+        """
+        # Handle None or "None"
+        if llm_value is None or llm_value == "None":
+            return 0
+        
+        # Handle direct integers
+        if isinstance(llm_value, int):
+            if llm_value in {-1, 0, 1, 2}:
+                return llm_value
+            return None
+        
+        # Handle string values
+        if isinstance(llm_value, str):
+            # Standard text values
+            value_lower = llm_value.strip().lower()
+            
+            # Handle compound values (e.g., "present_dominant", "endorsed_dominant")
+            if "dominant" in value_lower:
+                return 2
+            elif value_lower == "present" or value_lower == "endorsed":
+                return 1
+            elif value_lower == "conflict":
+                return -1
+            elif value_lower == "none" or value_lower == "":
+                return 0
+            
+            # Try to parse as integer
+            try:
+                int_val = int(value_lower)
+                if int_val in {-1, 0, 1, 2}:
+                    return int_val
+            except ValueError:
+                pass
+        
+        # Handle dictionary values
+        if isinstance(llm_value, dict):
+            # Check for structured format: {'value': 'present', 'comment': '...'}
+            if 'value' in llm_value:
+                # Recursively parse the extracted value
+                return self._parse_llm_value(llm_value['value'])
+            
+            # Check for simple dictionary keys (e.g., {'present': 1})
+            if 'present' in llm_value or 'endorsed' in llm_value:
+                return 1
+            elif 'conflict' in llm_value:
+                return -1
+            elif 'dominant' in llm_value:
+                return 2
+        
+        # Try to parse dictionary-like strings
+        if isinstance(llm_value, str) and '{' in llm_value:
+            try:
+                dict_val = eval(llm_value)
+                if isinstance(dict_val, dict):
+                    # Check for structured format first
+                    if 'value' in dict_val:
+                        return self._parse_llm_value(dict_val['value'])
+                    
+                    # Check for simple dictionary keys
+                    if 'present' in dict_val or 'endorsed' in dict_val:
+                        return 1
+                    elif 'conflict' in dict_val:
+                        return -1
+                    elif 'dominant' in dict_val:
+                        return 2
+            except:
+                pass
+        
+        return None
+    
     def _parse_llm_response(self, response_text: str) -> Optional[Dict[str, int]]:
         """
         Parse LLM JSON response to extract 19 category annotations.
@@ -395,26 +488,31 @@ class GeminiAdapter(ModelAdapter):
             # Parse JSON
             response_data = json.loads(json_text)
             
+            # Create case-insensitive lookup for response keys
+            response_keys_lower = {k.lower(): k for k in response_data.keys()}
+            
             # Convert to standard format
             predictions = {}
             
             for prompt_key, standard_key in self.CATEGORY_MAPPING.items():
-                if prompt_key not in response_data:
+                # Try exact match first
+                if prompt_key in response_data:
+                    llm_value = response_data[prompt_key]
+                # Try case-insensitive match
+                elif prompt_key.lower() in response_keys_lower:
+                    actual_key = response_keys_lower[prompt_key.lower()]
+                    llm_value = response_data[actual_key]
+                else:
                     self.logger.warning(f"Missing category in response: {prompt_key}")
                     # Use default value of 0 (absent)
                     predictions[standard_key] = 0
                     continue
                 
-                # Get the value and convert it
-                llm_value = response_data[prompt_key]
+                # Try to parse the value in various formats
+                parsed_value = self._parse_llm_value(llm_value)
                 
-                # Handle string "None" or actual None
-                if llm_value == "None" or llm_value is None:
-                    predictions[standard_key] = 0
-                elif llm_value == "present":
-                    predictions[standard_key] = 1
-                elif llm_value == "conflict":
-                    predictions[standard_key] = -1
+                if parsed_value is not None:
+                    predictions[standard_key] = parsed_value
                 else:
                     self.logger.warning(
                         f"Unexpected value for {prompt_key}: {llm_value}, defaulting to 0"

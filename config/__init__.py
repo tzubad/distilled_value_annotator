@@ -56,8 +56,18 @@ class PipelineConfig:
     # Model Configuration Properties
     @property
     def model_name(self) -> str:
-        """Get the LLM model name."""
+        """Get the model name (LLM or MLM)."""
         return self._config.get('model', {}).get('name', 'gemini-1.5-pro-002')
+    
+    @property
+    def model_type(self) -> str:
+        """Get the model type: 'llm' (Gemini) or 'mlm' (RoBERTa/DeBERTa). Default is 'llm'."""
+        return self._config.get('model', {}).get('type', 'llm')
+    
+    @property
+    def model_config(self) -> Dict[str, Any]:
+        """Get model-specific configuration dictionary."""
+        return self._config.get('model', {}).get('config', {})
     
     @property
     def max_retries(self) -> int:

@@ -329,7 +329,7 @@ def run_evaluation(args: argparse.Namespace, logger: logging.Logger) -> int:
         model_results = orchestrator.calculate_metrics()
         for model_name, result in model_results.items():
             logger.info(
-                f"  {model_name}: Macro F1 = {result.aggregate_metrics.endorsed.macro_f1:.4f}"
+                f"  {model_name}: Macro F1 = {result.endorsed_aggregate.macro_f1:.4f}"
             )
     except Exception as e:
         logger.error(f"Failed to calculate metrics: {e}")
@@ -364,8 +364,8 @@ def run_evaluation(args: argparse.Namespace, logger: logging.Logger) -> int:
         successful_predictions=successful_predictions,
         failed_predictions=total_predictions - successful_predictions,
         elapsed_time=elapsed_time,
-        reports_generated=[] if args.skip_reports else reports,
-        adapter_errors=orchestrator.adapter_errors,
+        generated_reports={} if args.skip_reports else {name: Path(path) for name, path in reports.items()},
+        model_errors=orchestrator.adapter_errors,
     )
     
     # Print summary

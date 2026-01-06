@@ -10,8 +10,13 @@ import sys
 import argparse
 import logging
 from pathlib import Path
+from utils.gcp_utils import cleanup_credentials
 from config import PipelineConfig
 from orchestrator import PipelineOrchestrator
+
+
+# Clean up credentials before any GCP operations
+cleanup_credentials()
 
 
 def parse_arguments():

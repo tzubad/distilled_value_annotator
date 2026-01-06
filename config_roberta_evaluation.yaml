@@ -1,0 +1,66 @@
+# RoBERTa Model Evaluation Configuration
+# ========================================
+#
+# This configuration demonstrates using a RoBERTa model for step 2 
+# of the 2-step annotation pipeline (script to annotations).
+
+# Required: Path to the ground truth CSV file
+ground_truth_path: "./cleaned_groundtruth_values_only.csv"
+
+# Required: Path to the directory containing video scripts
+# These are the movie scripts generated from step 1 (video to script)
+scripts_path: "gs://videos-scripts-and-annotations/saved_scripts/POC_scripts/"
+
+# Required: Output directory for evaluation reports
+output_dir: "./roberta_evaluation_results/"
+
+# Optional: Sample size for evaluation (useful for testing)
+# sample_size: 50
+
+# Optional: Random seed for reproducible sampling
+random_seed: 42
+
+# Optional: Minimum frequency threshold for category inclusion
+min_frequency_threshold: 0.05
+
+# Required: List of models to evaluate
+models:
+  # RoBERTa Model Configuration
+  - model_type: mlm
+    model_name: roberta-base
+    adapter_class: RoBERTaAdapter
+    config:
+      # HuggingFace model ID
+      # Options:
+      #   - "roberta-base": Base RoBERTa model (125M parameters)
+      #   - "roberta-large": Large RoBERTa model (355M parameters)
+      #   - "path/to/your/fine-tuned-model": Your custom fine-tuned model
+      model_id: "roberta-base"
+      
+      # Device configuration
+      # Options: "auto" (detect GPU/CPU), "cuda" (force GPU), "cpu" (force CPU)
+      device: "auto"
+      
+      # Maximum sequence length (RoBERTa can handle up to 512 tokens)
+      max_length: 512
+      
+      # Batch size for processing
+      # Adjust based on your GPU memory:
+      #   - CPU: 4-8
+      #   - GPU (8GB): 16-32
+      #   - GPU (16GB+): 32-64
+      batch_size: 16
+      
+      # Tokenizer settings
+      padding: true
+      truncation: true
+
+  # Optional: Compare with Gemini baseline
+  # - model_type: llm
+  #   model_name: gemini-flash-baseline
+  #   adapter_class: GeminiAdapter
+  #   config:
+  #     model_id: "gemini-1.5-flash"
+  #     max_retries: 3
+  #     retry_delay: 1.0
+  #     temperature: 0.1

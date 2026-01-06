@@ -59,24 +59,45 @@ class CSVGenerator:
                 normalized = {}
                 
                 # Preserve metadata fields
-                for meta_key in ('video_id', 'notes', 'Has_sound'):
+                for meta_key in ('video_id', 'notes', 'Has_sound', 'has_sound'):
                     if meta_key in ann:
-                        if meta_key == 'Has_sound':
+                        if meta_key in ('Has_sound', 'has_sound'):
                             val = ann[meta_key]
                             if isinstance(val, str):
-                                normalized[meta_key] = val.strip().lower() == 'true'
+                                normalized['Has_sound'] = val.strip().lower() == 'true'
                             else:
-                                normalized[meta_key] = val
+                                normalized['Has_sound'] = val
                         else:
                             normalized[meta_key] = ann[meta_key]
                 
-                # Parse value keys: '1_Value1_{label}_values'
+                # Parse value keys in two formats:
+                # Format 1 (LLM): '1_Value1_{label}_values' -> extract label
+                # Format 2 (MLM): Direct category names like 'Self_Direction_Action'
                 for key, value in ann.items():
+                    # Skip metadata fields
+                    if key in ('video_id', 'notes', 'Has_sound', 'has_sound'):
+                        continue
+                    
+                    # Try Format 1: LLM format with regex
                     m = re.match(r'^\d+_Value\d+_(?P<label>[A-Za-z_]+)_values$', key, re.IGNORECASE)
                     if m:
                         raw_label = m.group('label')
                         target_label = variant_to_target.get(raw_label, raw_label)
                         normalized[target_label] = value
+                    else:
+                        # Try Format 2: Direct category names (from MLM)
+                        # Check if key matches one of the expected value categories
+                        expected_categories = {
+                            'Self_Direction_Thought', 'Self_Direction_Action', 'Stimulation',
+                            'Hedonism', 'Achievement', 'Power_Resources', 'Power_Dominance',
+                            'Face', 'Security_Personal', 'Security_Social', 'Conformity_Rules',
+                            'Conformity_Interpersonal', 'Tradition', 'Humility',
+                            'Benevolence_Dependability', 'Benevolence_Care', 'Universalism_Concern',
+                            'Universalism_Nature', 'Universalism_Tolerance'
+                        }
+                        
+                        if key in expected_categories:
+                            normalized[key] = value
                 
                 normalized_annotations.append(normalized)
             

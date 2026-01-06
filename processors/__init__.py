@@ -592,3 +592,144 @@ class VideoToAnnotationProcessor:
         self.pipeline_logger.log_info(summary_msg)
         
         return annotations, failed_uris
+
+
+class ScriptToAnnotationMLMProcessor:
+    """
+    Processor for converting scripts to annotations using Masked Language Models (MLM).
+    Supports RoBERTa, DeBERTa, and other HuggingFace models.
+    """
+    
+    def __init__(
+        self,
+        mlm_adapter,
+        gcs_interface: GCSInterface,
+        pipeline_logger: Optional[PipelineLogger] = None
+    ):
+        """
+        Initialize the MLM script-to-annotation processor.
+        
+        Args:
+            mlm_adapter: MLM adapter instance (e.g., RoBERTaAdapter)
+            gcs_interface: GCSInterface instance for GCS operations
+            pipeline_logger: Optional PipelineLogger instance for structured error tracking
+        """
+        self.mlm_adapter = mlm_adapter
+        self.gcs_interface = gcs_interface
+        self.pipeline_logger = pipeline_logger or PipelineLogger("ScriptToAnnotationMLMProcessor")
+        
+        # Initialize the model
+        if not self.mlm_adapter.initialize():
+            raise RuntimeError(f"Failed to initialize MLM adapter: {mlm_adapter.get_model_name()}")
+        
+        logging.info(f"ScriptToAnnotationMLMProcessor initialized with {mlm_adapter.get_model_name()}")
+        self.pipeline_logger.log_info(f"ScriptToAnnotationMLMProcessor initialized with {mlm_adapter.get_model_name()}")
+    
+    def _process_single_script(self, script_source: str) -> Optional[Dict]:
+        """
+        Process a single script to generate annotations.
+        
+        Args:
+            script_source: GCS URI or in-memory script text
+        
+        Returns:
+            Dictionary containing annotations if successful, None if failed
+        """
+        try:
+            # Determine if this is a GCS URI or in-memory script
+            if script_source.startswith('gs://'):
+                logging.info(f"Processing script from GCS: {script_source}")
+                self.pipeline_logger.log_info(f"Processing script from GCS: {script_source}")
+                script_text = self.gcs_interface.read_script(script_source)
+                
+                # Extract video ID from filename
+                filename = script_source.split('/')[-1]
+                video_id = filename.rsplit('.', 1)[0]
+            else:
+                # Use in-memory script
+                logging.info("Processing in-memory script")
+                self.pipeline_logger.log_info("Processing in-memory script")
+                script_text = script_source
+                video_id = "unknown"
+            
+            if not script_text:
+                error_msg = f"Failed to load script from {script_source}"
+                logging.error(error_msg)
+                self.pipeline_logger.log_error("script_to_annotation_mlm", script_source, error_msg)
+                return None
+            
+            # Create VideoAnnotation object for the model
+            from evaluation.models import VideoAnnotation
+            video = VideoAnnotation(
+                video_id=video_id,
+                video_uri=f"gs://unknown/videos/{video_id}.mp4",
+                script_uri=script_source,
+                script_text=script_text,
+                annotations={},
+                has_sound=True
+            )
+            
+            # Run inference using MLM adapter
+            result = self.mlm_adapter.predict(video)
+            
+            if not result or not result.success:
+                error_msg = f"Failed to generate predictions: {result.error_message if result else 'Unknown error'}"
+                logging.error(error_msg)
+                self.pipeline_logger.log_error("script_to_annotation_mlm", script_source, error_msg)
+                return None
+            
+            # Convert predictions to annotation format
+            # Include all required fields: video_id, all 19 value categories, and has_sound
+            annotation_data = {
+                'video_id': video_id,
+                'has_sound': True,  # Add has_sound field
+                **result.predictions
+            }
+            
+            logging.info(f"Successfully generated annotations for {video_id}: {len(result.predictions)} categories")
+            self.pipeline_logger.log_info(f"Successfully generated annotations for {video_id}")
+            return annotation_data
+        
+        except Exception as e:
+            error_msg = str(e)
+            logging.error(f"Error processing script: {error_msg}")
+            self.pipeline_logger.log_error("script_to_annotation_mlm", script_source, error_msg)
+            return None
+    
+    def process_scripts(self, script_sources: List[str]) -> Tuple[List[Dict], List[str]]:
+        """
+        Process multiple scripts to generate value annotations using MLM.
+        
+        Args:
+            script_sources: List of GCS URIs or in-memory script texts
+        
+        Returns:
+            Tuple of (annotations, failed_sources)
+        """
+        annotations = []
+        failed_sources = []
+        total_scripts = len(script_sources)
+        
+        logging.info(f"Starting batch MLM processing of {total_scripts} scripts")
+        self.pipeline_logger.log_info(f"Starting batch MLM processing of {total_scripts} scripts")
+        
+        for idx, script_source in enumerate(script_sources, 1):
+            display_id = script_source.split('/')[-1] if script_source.startswith('gs://') else f"script_{idx}"
+            
+            logging.info(f"Processing {idx}/{total_scripts}: {display_id}")
+            
+            annotation_data = self._process_single_script(script_source)
+            
+            if annotation_data:
+                annotations.append(annotation_data)
+            else:
+                failed_sources.append(script_source)
+        
+        # Log summary
+        success_count = len(annotations)
+        failure_count = len(failed_sources)
+        summary_msg = f"MLM batch processing complete: {success_count} successful, {failure_count} failed"
+        logging.info(summary_msg)
+        self.pipeline_logger.log_info(summary_msg)
+        
+        return annotations, failed_sources

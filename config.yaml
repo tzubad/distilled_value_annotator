@@ -4,19 +4,19 @@
 # Google Cloud Storage Configuration
 gcs:
   # Name of the GCS bucket containing videos and where outputs will be saved
-  bucket_name: "videos-scripts-and-annotations"
+  bucket_name: "influencers_tiktok"
   
   # Path prefix in the bucket where video files are located
   # Videos should be in MP4 format
-  video_source_path: "videos/POC_videos"
+  video_source_path: "Networks/Ben/tiktoks"
   
   # Path prefix where generated movie scripts will be saved (optional)
   # Only used if pipeline.save_scripts is set to true
   # If not saving scripts, this can be omitted or left empty
-  script_output_path: "saved_scripts/POC_scripts"
+  script_output_path: "Networks/Ben/scripts"
   
   # Full path (including filename) where the final CSV output will be saved
-  csv_output_path: "output/POC_results/result.csv"
+  csv_output_path: "Networks/Ben/gemini_2.5_pro_results.csv"
 
 # LLM Model Configuration
 model:
@@ -42,7 +42,7 @@ pipeline:
   #   - "both": Run complete pipeline (video -> script -> annotations -> CSV)
   #   - "video_to_script": Only convert videos to scripts
   #   - "script_to_annotation": Only process existing scripts to annotations
-  stage: "script_to_annotation"
+  stage: "both"
   
   # Whether to save intermediate movie scripts to GCS
   # If true, scripts are saved to gcs.script_output_path

@@ -254,6 +254,77 @@ safety_settings:
 - You want to reprocess annotations without re-processing videos
 - You need the detailed movie script output
 
+### Using Masked Language Models (MLM) for Step 2
+
+For faster and more cost-effective annotation of step 2 (script to annotations), you can use RoBERTa or other Masked Language Models instead of Gemini LLM.
+
+**Configuration example with RoBERTa:**
+
+```yaml
+# MLM-based annotation configuration
+gcs:
+  bucket_name: "your-bucket-name"
+  video_source_path: "path/to/videos/"
+  script_output_path: "path/to/scripts/"
+  csv_output_path: "path/to/roberta_result.csv"
+
+# Use MLM for script-to-annotation stage
+model:
+  type: "mlm"                    # Use MLM instead of LLM
+  name: "roberta-base"           # RoBERTa model from HuggingFace
+  config:
+    max_length: 512              # Maximum sequence length
+    device: "auto"               # Auto-detect GPU/CPU
+    batch_size: 16               # Batch size for inference
+    padding: true
+    truncation: true
+
+pipeline:
+  stage: "script_to_annotation"  # Process existing scripts
+  save_scripts: false            # Scripts already exist
+  mode: "two_step"
+```
+
+**Supported MLM models:**
+- `roberta-base` - Lightweight, good for testing (125M parameters)
+- `roberta-large` - Better accuracy (355M parameters)
+- Custom fine-tuned models from HuggingFace
+
+**Benefits of MLM approach:**
+- **Fast inference**: ~100ms per script on CPU vs ~2-3 seconds for Gemini
+- **No API costs**: Models run locally or on your GPU
+- **Offline capability**: No internet required after model download
+- **Customizable**: Fine-tune on your own annotated data
+
+**When to use MLM:**
+- You need fast batch processing
+- Latency is critical
+- You want to avoid API costs
+- You have a fine-tuned model for your specific task
+
+**When to use Gemini LLM:**
+- Better out-of-box accuracy without fine-tuning
+- You need zero-shot learning on new domains
+- Complex reasoning or interpretation needed
+- Cost is not a concern
+
+**Running the pipeline:**
+
+```bash
+# Process videos to scripts with Gemini
+python main.py --config config.yaml
+
+# Then annotate scripts with RoBERTa
+python main.py --config config_roberta_step2.yaml
+```
+
+Or compare both approaches:
+
+```bash
+# Run evaluation with both Gemini and RoBERTa
+python run_evaluation.py --config config_roberta_evaluation.yaml
+```
+
 ## Pipeline Stages
 
 ### Stage 1: Video to Movie Script

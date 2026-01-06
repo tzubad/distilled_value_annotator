@@ -1,0 +1,29 @@
+# Evaluation Configuration for Gemini 2.5 Pro
+# Evaluates script-to-annotation performance using existing movie scripts
+
+# Ground truth annotations (local file)
+ground_truth_path: "./cleaned_groundtruth_values_only.csv"
+
+# Path to movie scripts in GCS
+scripts_path: "gs://influencers_tiktok/movies/videos/VideoScripts/"
+
+# Output directory in GCS for evaluation results
+output_dir: "gs://influencers_tiktok/model_results/gemini-2.5-pro_evaluation_results/"
+
+# Random seed for reproducible results
+random_seed: 42
+
+# Minimum frequency threshold for category inclusion in aggregate metrics
+min_frequency_threshold: 0.05
+
+# Model to evaluate
+models:
+  - model_type: llm
+    model_name: gemini-2.5-pro
+    adapter_class: GeminiAdapter
+    config:
+      model_id: "gemini-2.0-pro-exp"
+      max_retries: 3
+      retry_delay: 2.0
+      temperature: 0.1
+      # System prompt will use default from prompts/scripts_to_annotations.txt

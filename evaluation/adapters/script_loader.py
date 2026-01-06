@@ -71,7 +71,14 @@ class ScriptLoader:
             # Lazy import and initialization of GCS client
             if self._gcs_client is None:
                 from google.cloud import storage
-                self._gcs_client = storage.Client()
+                import os
+                
+                # Get project from environment variable
+                project_id = os.environ.get('GOOGLE_CLOUD_PROJECT')
+                if project_id:
+                    self._gcs_client = storage.Client(project=project_id)
+                else:
+                    self._gcs_client = storage.Client()
             
             # Parse the URI to extract bucket and blob path
             if not uri.startswith("gs://"):

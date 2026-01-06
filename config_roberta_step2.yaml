@@ -1,0 +1,62 @@
+# Video Annotation Pipeline Configuration - RoBERTa for Step 2
+# This configuration uses RoBERTa for the script-to-annotation stage (step 2)
+
+# Google Cloud Storage Configuration
+gcs:
+  bucket_name: "videos-scripts-and-annotations"
+  
+  # Path where scripts from step 1 are already saved
+  video_source_path: "videos/POC_videos"
+  script_output_path: "saved_scripts/POC_scripts"
+  
+  # Output path for RoBERTa annotations
+  csv_output_path: "output/POC_results/roberta_result.csv"
+
+# Model Configuration - RoBERTa for Step 2
+model:
+  # Model type: 'llm' for Gemini or 'mlm' for RoBERTa/DeBERTa
+  type: "mlm"
+  
+  # Model name - RoBERTa from HuggingFace
+  # Options: "roberta-base", "roberta-large", or path to fine-tuned model
+  name: "roberta-large"
+  
+  # Model-specific configuration
+  config:
+    # Maximum sequence length for tokenizer
+    max_length: 512
+    
+    # Device: 'auto' (detect GPU/CPU), 'cuda' (force GPU), 'cpu' (force CPU)
+    device: "auto"
+    
+    # Batch size for processing
+    batch_size: 16
+    
+    # Tokenizer settings
+    padding: true
+    truncation: true
+  
+  # Retry settings (for potential future enhancements)
+  max_retries: 1
+  retry_delay: 0
+  
+  # Request delay in seconds (not used for MLM but kept for compatibility)
+  request_delay: 0
+
+# Pipeline Execution Configuration
+pipeline:
+  # Use script_to_annotation to process existing scripts with RoBERTa
+  stage: "script_to_annotation"
+  
+  # Keep as two-step mode since we're processing existing scripts
+  mode: "two_step"
+  
+  # Don't need to save scripts since they already exist
+  save_scripts: false
+
+# Safety Settings (not applicable for MLM but kept for compatibility)
+safety_settings:
+  harassment: "BLOCK_NONE"
+  hate_speech: "BLOCK_NONE"
+  sexually_explicit: "BLOCK_NONE"
+  dangerous_content: "BLOCK_NONE"

@@ -1,11 +1,11 @@
 # Pipeline orchestrator module for coordinating pipeline execution
 
 import logging
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from config import PipelineConfig
 from gcs import GCSInterface
 from llm import VideoScriptLLMClient, AnnotationLLMClient, OneStepAnnotationLLMClient
-from processors import VideoToScriptProcessor, ScriptToAnnotationProcessor, VideoToAnnotationProcessor
+from processors import VideoToScriptProcessor, ScriptToAnnotationProcessor, VideoToAnnotationProcessor, ScriptToAnnotationMLMProcessor
 from utils import CSVGenerator, PipelineLogger
 
 
@@ -67,12 +67,21 @@ class PipelineOrchestrator:
                 retry_delay=config.retry_delay
             )
             
-            self.annotation_client = AnnotationLLMClient(
-                model_name=config.model_name,
-                safety_settings=config.safety_settings,
-                max_retries=config.max_retries,
-                retry_delay=config.retry_delay
-            )
+            # Initialize script-to-annotation processor based on model type
+            if config.model_type == 'mlm':
+                # Use MLM adapter for script-to-annotation
+                self._init_mlm_processor()
+                self.annotation_client = None
+            else:
+                # Use LLM client for script-to-annotation (default)
+                self.annotation_client = AnnotationLLMClient(
+                    model_name=config.model_name,
+                    safety_settings=config.safety_settings,
+                    max_retries=config.max_retries,
+                    retry_delay=config.retry_delay
+                )
+                self.script_processor = None
+                self.mlm_processor = None
             
             self.video_processor = VideoToScriptProcessor(
                 llm_client=self.video_script_client,
@@ -96,6 +105,47 @@ class PipelineOrchestrator:
             
             logging.info("PipelineOrchestrator initialized in TWO-STEP mode")
             self.pipeline_logger.log_info("PipelineOrchestrator initialized in TWO-STEP mode")
+    
+    def _init_mlm_processor(self):
+        """
+        Initialize the MLM processor for script-to-annotation.
+        
+        Raises:
+            RuntimeError: If MLM adapter cannot be initialized
+        """
+        try:
+            # Import the appropriate adapter based on model name
+            if 'roberta' in self.config.model_name.lower():
+                from evaluation.adapters.mlm_adapter import RoBERTaAdapter
+                mlm_adapter = RoBERTaAdapter(
+                    model_name=self.config.model_name,
+                    config=self.config.model_config
+                )
+            elif 'deberta' in self.config.model_name.lower():
+                from evaluation.adapters.mlm_adapter import DeBERTaAdapter
+                mlm_adapter = DeBERTaAdapter(
+                    model_name=self.config.model_name,
+                    config=self.config.model_config
+                )
+            else:
+                raise ValueError(f"Unsupported MLM model: {self.config.model_name}")
+            
+            # Initialize the MLM processor
+            self.mlm_processor = ScriptToAnnotationMLMProcessor(
+                mlm_adapter=mlm_adapter,
+                gcs_interface=self.gcs_interface,
+                pipeline_logger=self.pipeline_logger
+            )
+            
+            logging.info(f"MLM processor initialized with {self.config.model_name}")
+            self.pipeline_logger.log_info(f"MLM processor initialized with {self.config.model_name}")
+            
+        except Exception as e:
+            error_msg = f"Failed to initialize MLM processor: {str(e)}"
+            logging.error(error_msg)
+            self.pipeline_logger.log_error("orchestrator", "mlm_init", error_msg)
+            raise RuntimeError(error_msg)
+
 
     def _run_video_to_script_stage(self) -> Tuple[List[str], List[str]]:
         """
@@ -151,6 +201,7 @@ class PipelineOrchestrator:
         """
         Execute the script-to-annotation stage of the pipeline.
         Processes scripts (from GCS URIs or in-memory) to generate value annotations.
+        Supports both LLM (Gemini) and MLM (RoBERTa, DeBERTa) models.
         
         Args:
             script_sources: List of GCS URIs or in-memory script texts
@@ -176,8 +227,15 @@ class PipelineOrchestrator:
             logging.info(info_msg)
             self.pipeline_logger.log_info(info_msg)
             
-            # Process scripts using ScriptToAnnotationProcessor
-            annotations, failed_sources = self.script_processor.process_scripts(script_sources)
+            # Route to appropriate processor based on model type
+            if self.config.model_type == 'mlm' and self.mlm_processor:
+                logging.info(f"Using MLM processor ({self.config.model_name})")
+                annotations, failed_sources = self.mlm_processor.process_scripts(script_sources)
+            elif self.script_processor:
+                logging.info(f"Using LLM processor ({self.config.model_name})")
+                annotations, failed_sources = self.script_processor.process_scripts(script_sources)
+            else:
+                raise RuntimeError("No valid annotation processor initialized")
             
             # Log summary
             success_count = len(annotations)
