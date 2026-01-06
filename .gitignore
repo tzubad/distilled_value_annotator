@@ -11,10 +11,16 @@
 /.specify
 /.vscode
 /.github
-/*.pyc
 /*.json
 /*.csv
 /__pycache__
 /gemini-1.5_evaluation_results
 /manual_tests_results__pycache__/
+/manual_test_results/
+
+# Python bytecode
 *.pyc
+**/__pycache__/
+
+# Log files
+*.log
